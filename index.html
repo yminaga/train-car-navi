@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>スムーズ乗換 Navi - 自分専用の号車＆ドア位置メモ</title>
+  
+  <!-- PWA Settings -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="号車Navi">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  <link rel="icon" type="image/svg+xml" href="./icon.svg">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans JP"', 'sans-serif'],
+            display: ['"M PLUS Rounded 1c"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    input, textarea, select {
+      user-select: auto;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.94; transform: scale(1.02); }
+    }
+    .animate-pulse-subtle {
+      animation: pulse-subtle 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-800 antialiased min-h-screen selection:bg-emerald-500 selection:text-white flex justify-center">
+  
+  <div id="app" class="w-full flex justify-center" v-cloak>
+    
+    <!-- メインフレーム（スマホ幅基準、PCではワイド表示トグル可能） -->
+    <div :class="[isWideView ? 'max-w-4xl' : 'max-w-md', 'w-full min-h-screen bg-slate-50 flex flex-col shadow-2xl relative transition-all duration-300 pb-20']">
+      
+      <!-- ======================= -->
+      <!-- PWA インストールバナー   -->
+      <!-- ======================= -->
+      <div v-if="deferredPrompt || isIosShowInstallBanner" 
+           class="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-2.5 flex items-center justify-between text-xs font-bold shadow-md sticky top-0 z-40 animate-in slide-in-from-top">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+            <i data-lucide="download" class="w-3.5 h-3.5 text-white"></i>
+          </div>
+          <span>スマホにアプリとして追加できます</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button @click="installPwa()" class="px-2.5 py-1 bg-white text-emerald-800 rounded-lg text-[11px] font-black shadow-xs active:scale-95 transition">
+            インストール
+          </button>
+          <button @click="dismissInstallBanner()" class="p-1 text-white/80 hover:text-white">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- ======================= -->
+      <!-- ヘッダー               -->
+      <!-- ======================= -->
+      <header class="bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 text-white px-4 py-3 sticky top-0 z-30 shadow-md">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+              <i data-lucide="train" class="w-5 h-5 text-white"></i>
+            </div>
+            <div>
+              <h1 class="font-display font-extrabold text-base tracking-tight flex items-center gap-1.5 leading-tight">
+                スムーズ乗換 Navi
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-bold">号車・ドア</span>
+              </h1>
+              <p class="text-[10px] text-slate-400">自分だけの最短乗換・出口ルート管理</p>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-1.5">
+            <!-- 画面幅トグル（PC表示時） -->
+            <button @click="toggleWideView()" 
+                    class="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                    :title="isWideView ? 'スマホ幅に縮小' : 'ワイド幅に拡大'">
+              <i :data-lucide="isWideView ? 'smartphone' : 'monitor'" class="w-4 h-4"></i>
+            </button>
+            
+            <!-- ルート作成タブへの切り替えボタン -->
+            <button v-if="currentTab !== 'builder'" 
+                    @click="startNewRoute()" 
+                    class="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs shadow-md shadow-emerald-500/30 transition transform active:scale-95">
+              <i data-lucide="plus-circle" class="w-4 h-4"></i>
+              <span>ルート作成</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- ======================= -->
+      <!-- メインコンテンツ領域   -->
+      <!-- ======================= -->
+      <main class="flex-1 p-3.5 sm:p-4 overflow-y-auto">
+
+        <!-- ========================================== -->
+        <!-- TAB 1: 保存したメモ一覧 (My Navis)        -->
+        <!-- ========================================== -->
+        <div v-if="currentTab === 'saved'" class="space-y-3.5">
+          
+          <!-- 上部検索 & フィルターバー -->
+          <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200/80 space-y-2.5">
+            <div class="relative">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+              <input type="text" 
+                     v-model="searchQuery" 
+                     placeholder="駅名・路線・メモタイトルで検索..." 
+                     class="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:bg-white transition">
+              <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            <!-- タグフィルター -->
+            <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 text-xs">
+              <button v-for="tag in filterTags" 
+                      :key="tag"
+                      @click="selectedTag = tag"
+                      :class="[
+                        selectedTag === tag 
+                          ? 'bg-slate-900 text-white font-bold shadow-sm' 
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                        'px-3 py-1.5 rounded-full whitespace-nowrap transition text-xs font-medium'
+                      ]">
+                {{ tag }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 保存件数表示 -->
+          <div class="flex items-center justify-between text-xs text-slate-500 px-1">
+            <span>保存メモ: <strong class="text-slate-800 font-bold">{{ filteredNavis.length }}</strong> 件</span>
+            <span v-if="selectedTag !== 'すべて' || searchQuery" class="text-emerald-600 font-medium flex items-center gap-1">
+              <i data-lucide="filter" class="w-3 h-3"></i> 絞り込み中
+            </span>
+          </div>
+
+          <!-- 空状態の表示 -->
+          <div v-if="filteredNavis.length === 0" class="text-center py-12 px-4 bg-white rounded-3xl border-2 border-dashed border-slate-200">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3 shadow-inner">
+              <i data-lucide="bookmark" class="w-7 h-7"></i>
+            </div>
+            <h3 class="font-bold text-slate-800 text-sm mb-1">保存されたルートメモがありません</h3>
+            <p class="text-xs text-slate-500 max-w-xs mx-auto mb-5 leading-relaxed">
+              「ルート作成」タブから、普段使う電車や乗り換えの号車・ドア位置を自由に登録してください。
+            </p>
+            <div class="flex flex-col sm:flex-row justify-center gap-2">
+              <button @click="startNewRoute()" class="px-4 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/30 hover:bg-emerald-700 transition flex items-center justify-center gap-1.5">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                新しいルートを作成する
+              </button>
+              <button @click="loadSampleData()" class="px-4 py-2.5 bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-200 transition">
+                サンプルデータを読み込む
+              </button>
+            </div>
+          </div>
+
+          <!-- メモカード一覧 -->
+          <div v-else class="space-y-3">
+            <div v-for="item in filteredNavis" 
+                 :key="item.id"
+                 class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/90 hover:border-emerald-300 hover:shadow-md transition relative group">
+              
+              <!-- タイトル & 操作メニュー -->
+              <div class="flex items-start justify-between gap-2 mb-2.5">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+                    <span v-if="item.tag" class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                      {{ item.tag }}
+                    </span>
+                    <span v-if="item.pinned" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1 font-bold">
+                      <i data-lucide="pin" class="w-3 h-3 text-amber-500 fill-amber-400"></i> ピン留め
+                    </span>
+                  </div>
+                  <h3 class="font-bold text-sm sm:text-base text-slate-900 truncate">
+                    {{ item.title }}
+                  </h3>
+                </div>
+
+                <!-- 操作ボタン -->
+                <div class="flex items-center gap-0.5 shrink-0">
+                  <button @click="togglePin(item.id)" 
+                          class="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-amber-50 transition"
+                          :title="item.pinned ? 'ピン留め解除' : '上部に固定'">
+                    <i data-lucide="pin" :class="['w-4 h-4', item.pinned ? 'fill-amber-400 text-amber-500' : '']"></i>
+                  </button>
+                  <button @click="editRoute(item)" 
+                          class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                          title="編集">
+                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                  </button>
+                  <button @click="confirmDelete(item.id)" 
+                          class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                          title="削除">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 区間 & 号車・ドア表示部 -->
+              <div class="space-y-2 mb-3">
+                <div v-for="(leg, index) in item.legs" 
+                     :key="index" 
+                     class="bg-slate-50/90 rounded-xl p-3 border border-slate-200/80 space-y-2">
+                  
+                  <!-- 路線 & 区間駅名 -->
+                  <div class="flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-1.5 font-bold text-slate-800">
+                      <span class="w-2.5 h-2.5 rounded-full" :style="{ backgroundColor: getLineColor(leg.line) }"></span>
+                      <span>{{ leg.line || '指定路線なし' }}</span>
+                    </div>
+                    <div class="text-[11px] text-slate-600 font-semibold flex items-center gap-1">
+                      <span>{{ leg.fromStation || '出発' }}</span>
+                      <i data-lucide="arrow-right" class="w-3 h-3 text-slate-400"></i>
+                      <span>{{ leg.toStation || '到着' }}</span>
+                    </div>
+                  </div>
+
+                  <!-- ★ 一番見たい号車＆ドアの特大バッジ ★ -->
+                  <div class="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-xs">
+                    <div class="flex items-center gap-1.5">
+                      <span class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-black text-sm sm:text-base font-display shadow-xs">
+                        {{ leg.carNumber ? leg.carNumber + '号車' : '号車指定なし' }}
+                      </span>
+                      <span v-if="leg.doorNumber" class="px-2 py-0.5 rounded-lg bg-sky-100 text-sky-950 font-bold border border-sky-300 text-xs sm:text-sm">
+                        {{ leg.doorNumber }}
+                      </span>
+                    </div>
+
+                    <!-- スムーズ理由（階段前など） -->
+                    <div v-if="leg.smoothReason" class="flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                      <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-500 fill-amber-400"></i>
+                      <span>{{ leg.smoothReason }}</span>
+                    </div>
+                  </div>
+
+                  <!-- 詳細自由メモ -->
+                  <p v-if="leg.notes" class="text-[11px] text-slate-600 bg-slate-100 px-2.5 py-1.5 rounded-lg flex items-start gap-1">
+                    <i data-lucide="info" class="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5"></i>
+                    <span>{{ leg.notes }}</span>
+                  </p>
+                </div>
+              </div>
+
+              <!-- カードフッター: 乗車中モード起動 & 共有 -->
+              <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                <span class="text-[10px] text-slate-400">
+                  更新: {{ formatDate(item.updatedAt) }}
+                </span>
+                
+                <div class="flex items-center gap-1.5">
+                  <!-- Yahoo!乗換案内で現在時刻を見る -->
+                  <a v-if="item.legs.length > 0 && item.legs[0].fromStation && item.legs[item.legs.length-1].toStation"
+                     :href="getYahooTransitUrl(item.legs[0].fromStation, item.legs[item.legs.length-1].toStation)" 
+                     target="_blank" 
+                     rel="noopener noreferrer"
+                     class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                     title="Yahoo!乗換案内で現在時刻・遅延を確認">
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                  </a>
+
+                  <!-- LINE等に送るためのテキストコピー -->
+                  <button @click="copyShareText(item)" 
+                          class="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition"
+                          title="号車メモをテキストでコピー">
+                    <i data-lucide="share-2" class="w-4 h-4"></i>
+                  </button>
+
+                  <!-- 乗車中モード（特大HUD） -->
+                  <button @click="openFocusHUD(item)" 
+                          class="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/30 transition transform active:scale-95">
+                    <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                    <span>乗車中モード</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: ルート設定・作成 (Route Builder)   -->
+        <!-- ========================================== -->
+        <div v-if="currentTab === 'builder'" class="space-y-4">
+          
+          <div class="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-4">
+            
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h2 class="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+                  <i data-lucide="git-merge" class="w-5 h-5 text-emerald-600"></i>
+                  <span>{{ builderForm.id ? 'ルートと号車の編集' : '新しいルートを作成' }}</span>
+                </h2>
+                <p class="text-[11px] text-slate-500 mt-0.5">乗換ステップと号車・ドア位置を自由に設定できます</p>
+              </div>
+              <button v-if="builderForm.id" @click="startNewRoute()" class="text-xs text-emerald-600 hover:underline font-bold">
+                新規作成に切替
+              </button>
+            </div>
+
+            <!-- タイトルとタグ -->
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">
+                  ルートのタイトル <span class="text-rose-500">*</span>
+                </label>
+                <input type="text" 
+                       v-model="builderForm.title" 
+                       placeholder="例: 自宅 ➔ オフィス（朝通勤）、新宿 ➔ 渋谷" 
+                       class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/40 focus:outline-none text-xs sm:text-sm font-semibold">
+                
+                <!-- タイトル簡単入力チップ -->
+                <div class="flex flex-wrap gap-1 mt-1.5">
+                  <button v-for="t in ['自宅 ➔ 会社', '会社 ➔ 自宅', '自宅 ➔ 実家', '通院ルート', 'お出かけ']" 
+                          :key="t"
+                          type="button"
+                          @click="builderForm.title = t"
+                          class="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition font-medium">
+                    + {{ t }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">分類タグ</label>
+                  <select v-model="builderForm.tag" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/40 focus:outline-none text-xs font-semibold">
+                    <option value="通勤">通勤</option>
+                    <option value="休日">休日</option>
+                    <option value="お出かけ">お出かけ</option>
+                    <option value="通学">通学</option>
+                    <option value="出張">出張</option>
+                    <option value="その他">その他</option>
+                  </select>
+                </div>
+
+                <div class="flex items-center pt-5">
+                  <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                    <input type="checkbox" v-model="builderForm.pinned" class="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4">
+                    <span>最上部にピン留め</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- 移動ステップ（区間）の設定セクション -->
+            <div class="space-y-3 pt-2">
+              <div class="flex items-center justify-between">
+                <label class="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
+                  <i data-lucide="layers" class="w-4 h-4 text-emerald-600"></i>
+                  移動区間（乗り換えステップ）
+                </label>
+                <button type="button" 
+                        @click="addLegToBuilder()" 
+                        class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1 transition">
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                  <span>乗換区間を追加</span>
+                </button>
+              </div>
+
+              <!-- 区間カード一覧 -->
+              <div class="space-y-4">
+                <div v-for="(leg, lIdx) in builderForm.legs" 
+                     :key="lIdx" 
+                     class="bg-slate-50/80 p-4 rounded-3xl border border-slate-200 space-y-3.5 relative">
+                  
+                  <!-- 区間ヘッダー -->
+                  <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <span class="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                      <span class="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold">
+                        {{ lIdx + 1 }}
+                      </span>
+                      第{{ lIdx + 1 }}走 {{ lIdx > 0 ? '(乗り換え)' : '' }}
+                    </span>
+                    <button v-if="builderForm.legs.length > 1" 
+                            type="button" 
+                            @click="removeLegFromBuilder(lIdx)" 
+                            class="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 transition"
+                            title="この区間を削除">
+                      <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+
+                  <!-- 路線名と主要路線クイックボタン -->
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-600 mb-1">利用する路線名</label>
+                    <input type="text" 
+                           v-model="leg.line" 
+                           placeholder="例: JR山手線、東京メトロ銀座線、東急東横線" 
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500/40 focus:outline-none">
+                    
+                    <div class="flex flex-wrap gap-1 mt-1.5">
+                      <button v-for="l in commonLines" 
+                              :key="l" 
+                              type="button" 
+                              @click="leg.line = l" 
+                              class="text-[10px] px-2 py-0.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition font-medium">
+                        {{ l }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 乗車駅・降車駅 -->
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-[11px] font-bold text-emerald-800 mb-1">乗車駅</label>
+                      <input type="text" 
+                             v-model="leg.fromStation" 
+                             placeholder="例: 新宿" 
+                             class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500/40 focus:outline-none">
+                    </div>
+                    <div>
+                      <label class="block text-[11px] font-bold text-rose-800 mb-1">降車駅</label>
+                      <input type="text" 
+                             v-model="leg.toStation" 
+                             placeholder="例: 渋谷" 
+                             class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500/40 focus:outline-none">
+                    </div>
+                  </div>
+
+                  <!-- ★ 最重要：号車・ドアの選択ボックス ★ -->
+                  <div class="bg-white p-3.5 rounded-2xl border border-emerald-100 shadow-xs space-y-3">
+                    
+                    <!-- 号車番号（ワンタップボタングリッド） -->
+                    <div>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-xs font-bold text-emerald-950 flex items-center gap-1">
+                          <i data-lucide="train" class="w-3.5 h-3.5 text-emerald-600"></i>
+                          乗るべき号車: 
+                          <span class="text-emerald-600 font-black text-sm ml-1 font-display">
+                            {{ leg.carNumber ? leg.carNumber + '号車' : '指定なし' }}
+                          </span>
+                        </label>
+                        <button v-if="leg.carNumber" @click="leg.carNumber = null" type="button" class="text-[10px] text-slate-400 hover:text-slate-600">指定なしにする</button>
+                      </div>
+
+                      <div class="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar">
+                        <button v-for="n in 15" 
+                                :key="n"
+                                type="button"
+                                @click="leg.carNumber = n"
+                                :class="[
+                                  leg.carNumber === n 
+                                    ? 'bg-emerald-600 text-white font-black scale-105 shadow-sm' 
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                                  'w-7 h-7 shrink-0 rounded-lg text-xs font-bold transition flex items-center justify-center'
+                                ]">
+                          {{ n }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- ドア番号・位置 -->
+                    <div>
+                      <label class="block text-xs font-bold text-sky-950 mb-1 flex items-center gap-1">
+                        <i data-lucide="door-closed" class="w-3.5 h-3.5 text-sky-600"></i>
+                        ドア番号・乗車位置
+                      </label>
+                      <input type="text" 
+                             v-model="leg.doorNumber" 
+                             placeholder="例: 2番ドア、先頭寄り、中央扉" 
+                             class="w-full px-2.5 py-1.5 bg-sky-50/50 border border-sky-200 rounded-xl text-xs font-bold text-sky-950 focus:ring-2 focus:ring-sky-500/40 focus:outline-none">
+                      
+                      <div class="flex flex-wrap gap-1 mt-1.5">
+                        <button v-for="d in ['1番ドア', '2番ドア', '3番ドア', '4番ドア', '前寄り', '中央', '後ろ寄り']" 
+                                :key="d" 
+                                type="button" 
+                                @click="leg.doorNumber = d" 
+                                class="text-[10px] px-2 py-0.5 rounded-lg bg-sky-50 text-sky-800 border border-sky-200 hover:bg-sky-100 transition font-medium">
+                          + {{ d }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- スムーズ理由 -->
+                    <div>
+                      <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                        <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-500"></i>
+                        スムーズな理由（階段・出口など）
+                      </label>
+                      <input type="text" 
+                             v-model="leg.smoothReason" 
+                             placeholder="例: 階段正面、上りエスカレーター前、北改札直結" 
+                             class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500/40 focus:outline-none">
+                      
+                      <div class="flex flex-wrap gap-1 mt-1.5">
+                        <button v-for="tag in quickReasonTags" 
+                                :key="tag" 
+                                type="button" 
+                                @click="leg.smoothReason = tag" 
+                                class="text-[10px] px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition font-medium">
+                          + {{ tag }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- 自由メモ -->
+                    <div>
+                      <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">区間メモ・補足</label>
+                      <input type="text" 
+                             v-model="leg.notes" 
+                             placeholder="例: 降りたらすぐ右の階段へ、朝は混むので後方がおすすめ" 
+                             class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500/40 focus:outline-none">
+                    </div>
+
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- 区間追加ボタン -->
+              <button type="button" 
+                      @click="addLegToBuilder()" 
+                      class="w-full py-2.5 border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-800 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>次の乗り換え電車（第{{ builderForm.legs.length + 1 }}走）を追加</span>
+              </button>
+            </div>
+
+            <!-- 保存・クリアアクション -->
+            <div class="pt-3 border-t border-slate-100 flex items-center gap-2">
+              <button @click="resetBuilderForm()" 
+                      type="button" 
+                      class="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-xs font-bold transition">
+                クリア
+              </button>
+              <button @click="saveBuilderRoute()" 
+                      type="button" 
+                      class="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/30 flex items-center justify-center gap-2 transition transform active:scale-98">
+                <i data-lucide="bookmark-check" class="w-4 h-4"></i>
+                <span>{{ builderForm.id ? '変更を保存する' : 'このルートをマイメモに保存' }}</span>
+              </button>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: 設定 & PWA・データ管理 (Settings)  -->
+        <!-- ========================================== -->
+        <div v-if="currentTab === 'settings'" class="space-y-4">
+          <div class="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-4">
+            <h2 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+              <i data-lucide="smartphone" class="w-4 h-4 text-emerald-600"></i>
+              スマホアプリ (PWA) の設定
+            </h2>
+
+            <div class="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 space-y-2 text-xs">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="font-bold text-emerald-950">ホーム画面に追加してアプリ化</h4>
+                  <p class="text-[11px] text-emerald-800">全画面で電車の前でも爆速起動できます</p>
+                </div>
+                <button @click="installPwa()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs transition">
+                  追加する
+                </button>
+              </div>
+              <p class="text-[10px] text-slate-500 pt-1 border-t border-emerald-200/60">
+                ※ iPhone/Safari の場合は、画面下の「共有ボタン（四角から矢印）」をタップし、「ホーム画面に追加」を選択してください。
+              </p>
+            </div>
+
+            <h3 class="font-bold text-xs text-slate-700 pt-2 flex items-center gap-1.5">
+              <i data-lucide="database" class="w-4 h-4 text-slate-500"></i>
+              データ管理・バックアップ
+            </h3>
+
+            <div class="space-y-3 text-xs">
+              <!-- サンプルデータ復元 -->
+              <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                <div>
+                  <h4 class="font-bold text-slate-800">サンプルデータを追加</h4>
+                  <p class="text-[11px] text-slate-500">便利な乗換メモの例（新宿、東京、銀座など）を追加します</p>
+                </div>
+                <button @click="loadSampleData()" class="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl font-bold text-slate-700 shadow-xs transition">
+                  追加
+                </button>
+              </div>
+
+              <!-- JSONエクスポート -->
+              <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                <div>
+                  <h4 class="font-bold text-slate-800">JSONエクスポート</h4>
+                  <p class="text-[11px] text-slate-500">保存済みメモをバックアップファイルとして保存</p>
+                </div>
+                <button @click="exportData()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs transition">
+                  エクスポート
+                </button>
+              </div>
+
+              <!-- JSONインポート -->
+              <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                <div>
+                  <h4 class="font-bold text-slate-800">JSONインポート</h4>
+                  <p class="text-[11px] text-slate-500">保存済みJSONファイルからメモを復元します</p>
+                </div>
+                <input type="file" ref="fileInput" accept=".json" @change="importData($event)" class="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300">
+              </div>
+
+              <!-- 全データ初期化 -->
+              <div class="flex items-center justify-between p-3 rounded-2xl bg-rose-50 border border-rose-200">
+                <div>
+                  <h4 class="font-bold text-rose-800">すべてのデータを削除</h4>
+                  <p class="text-[11px] text-rose-600">ローカルストレージのすべてのメモを削除します</p>
+                </div>
+                <button @click="clearAllData()" class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold shadow-xs transition">
+                  全消去
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+
+      <!-- ======================= -->
+      <!-- ボトムナビゲーションバー -->
+      <!-- ======================= -->
+      <nav class="bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2 fixed bottom-0 left-0 right-0 z-20 flex justify-center shadow-lg">
+        <div :class="[isWideView ? 'max-w-4xl' : 'max-w-md', 'w-full flex items-center justify-around']">
+          
+          <!-- タブ1: 保存メモ一覧 -->
+          <button @click="currentTab = 'saved'" 
+                  :class="[
+                    currentTab === 'saved' ? 'text-emerald-600 font-bold' : 'text-slate-400 hover:text-slate-600',
+                    'flex flex-col items-center gap-1 py-1 px-3 transition'
+                  ]">
+            <div class="relative">
+              <i data-lucide="bookmark" class="w-5 h-5"></i>
+              <span v-if="navis.length > 0" class="absolute -top-1 -right-2 bg-emerald-500 text-white text-[9px] font-bold px-1 rounded-full">
+                {{ navis.length }}
+              </span>
+            </div>
+            <span class="text-[10px]">マイメモ</span>
+          </button>
+
+          <!-- タブ2: ルート設定・作成（中央ボタン） -->
+          <button @click="currentTab = 'builder'" 
+                  class="flex flex-col items-center -mt-5 group">
+            <div :class="[
+              currentTab === 'builder' 
+                ? 'bg-gradient-to-tr from-emerald-600 to-teal-400 scale-105 ring-4 ring-emerald-500/20' 
+                : 'bg-gradient-to-tr from-slate-900 to-slate-800',
+              'w-12 h-12 rounded-full text-white flex items-center justify-center shadow-lg shadow-slate-900/40 group-active:scale-95 transition'
+            ]">
+              <i data-lucide="plus" class="w-6 h-6 stroke-[2.5]"></i>
+            </div>
+            <span :class="[currentTab === 'builder' ? 'text-emerald-600 font-bold' : 'text-slate-700', 'text-[10px] font-bold mt-0.5']">
+              ルート作成
+            </span>
+          </button>
+
+          <!-- タブ3: 設定 -->
+          <button @click="currentTab = 'settings'" 
+                  :class="[
+                    currentTab === 'settings' ? 'text-emerald-600 font-bold' : 'text-slate-400 hover:text-slate-600',
+                    'flex flex-col items-center gap-1 py-1 px-3 transition'
+                  ]">
+            <i data-lucide="sliders" class="w-5 h-5"></i>
+            <span class="text-[10px]">設定・PWA</span>
+          </button>
+
+        </div>
+      </nav>
+
+      <!-- ======================================================== -->
+      <!-- MODAL: 乗車中フォーカスHUDモーダル（片手で瞬時に確認） -->
+      <!-- ======================================================== -->
+      <div v-if="isFocusHUDOpen && activeFocusItem" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 backdrop-blur-md p-4 text-white">
+        <div class="w-full max-w-sm flex flex-col space-y-4">
+          
+          <!-- 上部コントロール -->
+          <div class="flex items-center justify-between text-slate-400">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+              <span class="text-xs font-black tracking-widest text-emerald-400 uppercase">乗車中モード</span>
+            </div>
+            <button @click="isFocusHUDOpen = false" class="p-2 rounded-full bg-slate-800 text-slate-300 hover:text-white transition">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+
+          <!-- メイン情報カード -->
+          <div class="bg-gradient-to-b from-slate-900 via-slate-850 to-slate-900 rounded-3xl p-6 border border-slate-700 shadow-2xl space-y-5 text-center relative overflow-hidden">
+            
+            <!-- 移動タイトル -->
+            <div>
+              <span class="text-xs px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-bold">
+                {{ activeFocusItem.tag || '移動メモ' }}
+              </span>
+              <h2 class="text-lg font-extrabold mt-2 text-white">
+                {{ activeFocusItem.title }}
+              </h2>
+            </div>
+
+            <!-- 現在表示中の区間セレクター -->
+            <div v-if="activeFocusItem.legs.length > 1" class="flex justify-center gap-1.5 flex-wrap">
+              <button v-for="(leg, idx) in activeFocusItem.legs" 
+                      :key="idx" 
+                      @click="activeFocusLegIndex = idx"
+                      :class="[
+                        activeFocusLegIndex === idx 
+                          ? 'bg-emerald-500 text-slate-950 font-black' 
+                          : 'bg-slate-800 text-slate-400',
+                        'px-3 py-1.5 rounded-xl text-xs transition'
+                      ]">
+                第{{ idx + 1 }}走: {{ leg.line || '電車' }}
+              </button>
+            </div>
+
+            <!-- フォーカス区間の詳細 -->
+            <div class="space-y-4">
+              <!-- 路線と区間 -->
+              <div class="bg-slate-950/80 rounded-2xl p-3 border border-slate-800">
+                <div class="flex items-center justify-center gap-2 mb-1">
+                  <span class="w-3 h-3 rounded-full" :style="{ backgroundColor: getLineColor(currentFocusLeg.line) }"></span>
+                  <span class="font-extrabold text-base text-white">{{ currentFocusLeg.line || '電車' }}</span>
+                </div>
+                <div class="flex items-center justify-center gap-2 text-sm text-slate-300 font-bold">
+                  <span>{{ currentFocusLeg.fromStation || '乗車駅' }}</span>
+                  <i data-lucide="arrow-right" class="w-4 h-4 text-emerald-400"></i>
+                  <span>{{ currentFocusLeg.toStation || '降車駅' }}</span>
+                </div>
+              </div>
+
+              <!-- ★★★ 超特大号車＆ドア番号表示 ★★★ -->
+              <div class="py-2">
+                <p class="text-xs uppercase tracking-wider text-emerald-400 font-bold mb-1">乗るべき車両・位置</p>
+                
+                <div class="flex items-baseline justify-center gap-3">
+                  <div class="flex items-baseline">
+                    <span class="text-7xl sm:text-8xl font-black font-display text-emerald-400 drop-shadow-lg">
+                      {{ currentFocusLeg.carNumber || '-' }}
+                    </span>
+                    <span class="text-2xl font-black text-emerald-300 ml-1">号車</span>
+                  </div>
+
+                  <div v-if="currentFocusLeg.doorNumber" class="flex items-baseline">
+                    <span class="text-3xl sm:text-4xl font-extrabold text-sky-400">
+                      {{ currentFocusLeg.doorNumber }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- スムーズ理由の特大バッジ -->
+                <div v-if="currentFocusLeg.smoothReason" class="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-sm font-bold animate-pulse-subtle">
+                  <i data-lucide="zap" class="w-4 h-4 text-amber-400 fill-amber-400"></i>
+                  <span>{{ currentFocusLeg.smoothReason }}</span>
+                </div>
+              </div>
+
+              <!-- 編成ビジュアルイメージ -->
+              <div class="pt-1">
+                <p class="text-[10px] text-slate-400 mb-1.5">編成の位置目安</p>
+                <div class="flex items-center justify-center gap-1 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+                  <span class="text-[9px] text-slate-500 shrink-0 mr-1">進行方向 ➔</span>
+                  <div v-for="c in 10" :key="c" 
+                       :class="[
+                         c === currentFocusLeg.carNumber 
+                           ? 'bg-emerald-500 text-slate-950 font-black scale-110 shadow-lg shadow-emerald-500/50' 
+                           : 'bg-slate-800 text-slate-500',
+                         'w-5 h-6 rounded flex items-center justify-center text-[10px] transition'
+                       ]">
+                    {{ c }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- メモがあれば表示 -->
+              <p v-if="currentFocusLeg.notes" class="text-xs text-slate-300 bg-slate-800/90 p-3 rounded-2xl border border-slate-700/80 text-left leading-relaxed">
+                💡 {{ currentFocusLeg.notes }}
+              </p>
+            </div>
+
+            <!-- 次の乗り換え / 閉じるボタン -->
+            <div class="pt-2 flex flex-col gap-2">
+              <button v-if="activeFocusItem.legs.length > 1 && activeFocusLegIndex < activeFocusItem.legs.length - 1" 
+                      @click="activeFocusLegIndex++"
+                      class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/40 transition">
+                <span>次の乗り換え（第{{ activeFocusLegIndex + 2 }}走）へ</span>
+                <i data-lucide="arrow-right" class="w-4 h-4"></i>
+              </button>
+
+              <button @click="isFocusHUDOpen = false" 
+                      class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl text-xs transition">
+                画面を閉じる
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        const currentTab = ref('saved'); // 'saved', 'builder', 'settings'
+        const isWideView = ref(false);
+        const searchQuery = ref('');
+        const selectedTag = ref('すべて');
+        const filterTags = ['すべて', '通勤', '休日', 'お出かけ', '通学', '出張', 'その他'];
+        const quickReasonTags = ['階段正面', '上りエスカレーター前', 'エレベーター至近', '改札出口直結', '乗換通路すぐ', '南改札口', '北改札口', '比較的空いている'];
+        const commonLines = ['JR山手線', 'JR中央線快速', 'JR総武線', 'JR京浜東北線', '東京メトロ銀座線', '東京メトロ丸ノ内線', '東京メトロ東西線', '東京メトロ日比谷線', '東急東横線', '都営大江戸線'];
+
+        const navis = ref([]);
+
+        // PWA インストール関連
+        const deferredPrompt = ref(null);
+        const isIosShowInstallBanner = ref(false);
+
+        // ルート設定・作成フォーム
+        const builderForm = ref({
+          id: null,
+          title: '',
+          tag: '通勤',
+          pinned: false,
+          legs: [
+            {
+              line: 'JR山手線',
+              fromStation: '',
+              toStation: '',
+              carNumber: 4,
+              doorNumber: '2番ドア',
+              smoothReason: '階段正面',
+              notes: ''
+            }
+          ]
+        });
+
+        // 乗車中HUDモーダル
+        const isFocusHUDOpen = ref(false);
+        const activeFocusItem = ref(null);
+        const activeFocusLegIndex = ref(0);
+
+        const refreshIcons = () => {
+          nextTick(() => {
+            if (window.lucide) {
+              lucide.createIcons();
+            }
+          });
+        };
+
+        const toggleWideView = () => {
+          isWideView.value = !isWideView.value;
+          refreshIcons();
+        };
+
+        // --- PWA Service Worker 登録 & インストール処理 ---
+        const initPwa = () => {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js')
+              .then(reg => console.log('[PWA] Service Worker registered:', reg.scope))
+              .catch(err => console.warn('[PWA] SW register failed:', err));
+          }
+
+          window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt.value = e;
+            console.log('[PWA] beforeinstallprompt event captured');
+          });
+
+          const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+          const isInStandaloneMode = ('standalone' in window.navigator) && window.navigator.standalone;
+          if (isIos && !isInStandaloneMode) {
+            isIosShowInstallBanner.value = true;
+          }
+        };
+
+        const installPwa = () => {
+          if (deferredPrompt.value) {
+            deferredPrompt.value.prompt();
+            deferredPrompt.value.userChoice.then((choiceResult) => {
+              if (choiceResult.outcome === 'accepted') {
+                console.log('[PWA] User accepted install prompt');
+              }
+              deferredPrompt.value = null;
+            });
+          } else {
+            alert('【ホーム画面への追加方法】\n\n・iPhone (Safari): 画面下の共有ボタン（四角に↑）をタップ ➔ 「ホーム画面に追加」\n・Android (Chrome): 右上のメニュー「︙」 ➔ 「アプリをインストール」または「ホーム画面に追加」');
+          }
+        };
+
+        const dismissInstallBanner = () => {
+          deferredPrompt.value = null;
+          isIosShowInstallBanner.value = false;
+        };
+
+        // --- LocalStorage 永続化 ---
+        const STORAGE_KEY = 'smooth_navi_records_v1';
+
+        const saveToStorage = () => {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(navis.value));
+          } catch (e) {
+            console.error('Failed to save to localStorage', e);
+          }
+        };
+
+        const loadFromStorage = () => {
+          try {
+            const data = localStorage.getItem(STORAGE_KEY);
+            if (data) {
+              navis.value = JSON.parse(data);
+            } else {
+              loadSampleData(false);
+            }
+          } catch (e) {
+            console.error('Failed to load from localStorage', e);
+            navis.value = [];
+          }
+        };
+
+        const loadSampleData = (showToast = true) => {
+          const sampleRecords = [
+            {
+              id: 'sample-1',
+              title: '自宅 ➔ 丸の内オフィス（朝通勤）',
+              tag: '通勤',
+              pinned: true,
+              createdAt: Date.now() - 86400000 * 2,
+              updatedAt: Date.now() - 86400000 * 2,
+              legs: [
+                {
+                  line: 'JR中央線快速',
+                  fromStation: '中野',
+                  toStation: '東京',
+                  carNumber: 4,
+                  doorNumber: '2番ドア',
+                  smoothReason: '丸の内地下北口改札直結階段',
+                  notes: '4号車2番ドアで降りると丸の内地下通路に直結して雨の日も濡れずにオフィスへ行ける'
+                }
+              ]
+            },
+            {
+              id: 'sample-2',
+              title: '新宿 ➔ 渋谷（最速乗換ルート）',
+              tag: '休日',
+              pinned: false,
+              createdAt: Date.now() - 86400000,
+              updatedAt: Date.now() - 86400000,
+              legs: [
+                {
+                  line: 'JR山手線 外回り',
+                  fromStation: '新宿',
+                  toStation: '渋谷',
+                  carNumber: 8,
+                  doorNumber: '4番ドア',
+                  smoothReason: 'ハチ公改札口至近',
+                  notes: '8号車はエスカレーター正面。降りてすぐハチ公前スクランブル交差点へ出られる'
+                }
+              ]
+            },
+            {
+              id: 'sample-3',
+              title: '品川 ➔ 銀座（銀座線乗換スムーズ）',
+              tag: 'お出かけ',
+              pinned: false,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              legs: [
+                {
+                  line: 'JR山手線 内回り',
+                  fromStation: '品川',
+                  toStation: '新橋',
+                  carNumber: 3,
+                  doorNumber: '4番ドア',
+                  smoothReason: '銀座線乗換地下階段正面',
+                  notes: '3号車から降りると、地下鉄銀座線への最短乗り換え階段が目の前！'
+                },
+                {
+                  line: '東京メトロ銀座線',
+                  fromStation: '新橋',
+                  toStation: '銀座',
+                  carNumber: 2,
+                  doorNumber: '1番ドア',
+                  smoothReason: 'A3出口・中央通り直結',
+                  notes: '2号車1番ドアで松屋・三越方面改札にすぐ出られます'
+                }
+              ]
+            }
+          ];
+
+          if (showToast) {
+            navis.value = [...sampleRecords, ...navis.value];
+            alert('サンプルデータを追加しました！');
+          } else {
+            navis.value = sampleRecords;
+          }
+          saveToStorage();
+          refreshIcons();
+        };
+
+        const getLineColor = (lineName) => {
+          if (!lineName) return '#64748b';
+          const name = lineName.toLowerCase();
+          if (name.includes('山手')) return '#80c241';
+          if (name.includes('中央')) return '#f15a22';
+          if (name.includes('総武')) return '#ffd900';
+          if (name.includes('京浜東北')) return '#00b2e5';
+          if (name.includes('銀座')) return '#ff9500';
+          if (name.includes('丸ノ内') || name.includes('丸の内')) return '#f62e36';
+          if (name.includes('日比谷')) return '#9caeb7';
+          if (name.includes('東西')) return '#009bbf';
+          if (name.includes('千代田')) return '#00bb85';
+          if (name.includes('有楽町')) return '#c1a470';
+          if (name.includes('半蔵門')) return '#8f76d6';
+          if (name.includes('南北')) return '#00ac9b';
+          if (name.includes('副都心')) return '#9c5e31';
+          if (name.includes('東横')) return '#da0442';
+          if (name.includes('大江戸')) return '#b6007a';
+          return '#059669';
+        };
+
+        const filteredNavis = computed(() => {
+          return navis.value.filter(item => {
+            if (selectedTag.value !== 'すべて' && item.tag !== selectedTag.value) {
+              return false;
+            }
+            if (searchQuery.value.trim()) {
+              const q = searchQuery.value.toLowerCase().trim();
+              const matchTitle = item.title && item.title.toLowerCase().includes(q);
+              const matchTag = item.tag && item.tag.toLowerCase().includes(q);
+              const matchLegs = item.legs && item.legs.some(leg => 
+                (leg.line && leg.line.toLowerCase().includes(q)) ||
+                (leg.fromStation && leg.fromStation.toLowerCase().includes(q)) ||
+                (leg.toStation && leg.toStation.toLowerCase().includes(q)) ||
+                (leg.smoothReason && leg.smoothReason.toLowerCase().includes(q)) ||
+                (leg.notes && leg.notes.toLowerCase().includes(q))
+              );
+              return matchTitle || matchTag || matchLegs;
+            }
+            return true;
+          }).sort((a, b) => {
+            if (a.pinned && !b.pinned) return -1;
+            if (!a.pinned && b.pinned) return 1;
+            return (b.updatedAt || 0) - (a.updatedAt || 0);
+          });
+        });
+
+        const formatDate = (timestamp) => {
+          if (!timestamp) return '';
+          const d = new Date(timestamp);
+          return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        };
+
+        const togglePin = (id) => {
+          const item = navis.value.find(n => n.id === id);
+          if (item) {
+            item.pinned = !item.pinned;
+            item.updatedAt = Date.now();
+            saveToStorage();
+            refreshIcons();
+          }
+        };
+
+        const confirmDelete = (id) => {
+          if (confirm('この号車メモを削除してもよろしいですか？')) {
+            navis.value = navis.value.filter(n => n.id !== id);
+            saveToStorage();
+            refreshIcons();
+          }
+        };
+
+        const copyShareText = (item) => {
+          let text = `【${item.title}】\n`;
+          item.legs.forEach((leg, i) => {
+            text += `[${i+1}] ${leg.line || '電車'} (${leg.fromStation}➔${leg.toStation})\n`;
+            text += `  👉 ${leg.carNumber ? leg.carNumber + '号車' : ''} ${leg.doorNumber || ''} (${leg.smoothReason || ''})\n`;
+          });
+          navigator.clipboard.writeText(text).then(() => {
+            alert('号車メモをクリップボードにコピーしました！LINEやメモ帳に貼り付けできます。');
+          }).catch(() => {
+            alert('コピーに失敗しました。');
+          });
+        };
+
+        const getYahooTransitUrl = (from, to) => {
+          return `https://transit.yahoo.co.jp/search/result?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+        };
+
+        // --- ルート設定・作成ビルダーの操作 ---
+        const startNewRoute = () => {
+          resetBuilderForm();
+          currentTab.value = 'builder';
+          refreshIcons();
+        };
+
+        const editRoute = (item) => {
+          builderForm.value = JSON.parse(JSON.stringify(item));
+          currentTab.value = 'builder';
+          refreshIcons();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        const resetBuilderForm = () => {
+          builderForm.value = {
+            id: null,
+            title: '',
+            tag: '通勤',
+            pinned: false,
+            legs: [
+              {
+                line: 'JR山手線',
+                fromStation: '',
+                toStation: '',
+                carNumber: 4,
+                doorNumber: '2番ドア',
+                smoothReason: '階段正面',
+                notes: ''
+              }
+            ]
+          };
+          refreshIcons();
+        };
+
+        const addLegToBuilder = () => {
+          const lastLeg = builderForm.value.legs[builderForm.value.legs.length - 1];
+          builderForm.value.legs.push({
+            line: '地下鉄線',
+            fromStation: lastLeg ? lastLeg.toStation : '',
+            toStation: '',
+            carNumber: 2,
+            doorNumber: '1番ドア',
+            smoothReason: '改札口正面',
+            notes: ''
+          });
+          refreshIcons();
+        };
+
+        const removeLegFromBuilder = (index) => {
+          if (builderForm.value.legs.length > 1) {
+            builderForm.value.legs.splice(index, 1);
+            refreshIcons();
+          }
+        };
+
+        const saveBuilderRoute = () => {
+          if (!builderForm.value.title.trim()) {
+            alert('ルートのタイトルを入力してください（例: 自宅 ➔ 会社）');
+            return;
+          }
+          if (builderForm.value.legs.length === 0) {
+            alert('最低1つの区間（電車）を設定してください。');
+            return;
+          }
+
+          const now = Date.now();
+          if (builderForm.value.id) {
+            const index = navis.value.findIndex(n => n.id === builderForm.value.id);
+            if (index !== -1) {
+              navis.value[index] = { ...builderForm.value, updatedAt: now };
+            }
+          } else {
+            const newItem = {
+              ...builderForm.value,
+              id: 'navi_' + now + '_' + Math.random().toString(36).substr(2, 5),
+              createdAt: now,
+              updatedAt: now
+            };
+            navis.value.unshift(newItem);
+          }
+
+          saveToStorage();
+          alert('ルートメモを保存しました！');
+          currentTab.value = 'saved';
+          resetBuilderForm();
+          refreshIcons();
+        };
+
+        // --- 乗車中HUDモーダル ---
+        const openFocusHUD = (item) => {
+          activeFocusItem.value = item;
+          activeFocusLegIndex.value = 0;
+          isFocusHUDOpen.value = true;
+          refreshIcons();
+        };
+
+        const currentFocusLeg = computed(() => {
+          if (!activeFocusItem.value || !activeFocusItem.value.legs) return {};
+          return activeFocusItem.value.legs[activeFocusLegIndex.value] || activeFocusItem.value.legs[0] || {};
+        });
+
+        // --- 設定タブ: インポート & エクスポート ---
+        const exportData = () => {
+          const jsonStr = JSON.stringify(navis.value, null, 2);
+          const blob = new Blob([jsonStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `smooth_navi_backup_${new Date().toISOString().slice(0, 10)}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+
+        const importData = (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const imported = JSON.parse(e.target.result);
+              if (Array.isArray(imported)) {
+                navis.value = imported;
+                saveToStorage();
+                alert(`メモを ${imported.length} 件インポートしました！`);
+                currentTab.value = 'saved';
+                refreshIcons();
+              } else {
+                alert('無効なJSONフォーマットです。');
+              }
+            } catch (err) {
+              alert('JSONの読み込みに失敗しました。');
+            }
+          };
+          reader.readAsText(file);
+        };
+
+        const clearAllData = () => {
+          if (confirm('本当にすべての号車メモを消去しますか？（元に戻せません）')) {
+            navis.value = [];
+            saveToStorage();
+            refreshIcons();
+          }
+        };
+
+        // --- ライフサイクル ---
+        onMounted(() => {
+          loadFromStorage();
+          initPwa();
+          refreshIcons();
+        });
+
+        watch([currentTab, isFocusHUDOpen], () => {
+          refreshIcons();
+        });
+
+        return {
+          currentTab,
+          isWideView,
+          toggleWideView,
+          searchQuery,
+          selectedTag,
+          filterTags,
+          quickReasonTags,
+          commonLines,
+          navis,
+          filteredNavis,
+          formatDate,
+          togglePin,
+          confirmDelete,
+          copyShareText,
+          getYahooTransitUrl,
+          // PWA
+          deferredPrompt,
+          isIosShowInstallBanner,
+          installPwa,
+          dismissInstallBanner,
+          // ルートビルダー
+          builderForm,
+          startNewRoute,
+          editRoute,
+          resetBuilderForm,
+          addLegToBuilder,
+          removeLegFromBuilder,
+          saveBuilderRoute,
+          // HUD
+          isFocusHUDOpen,
+          activeFocusItem,
+          activeFocusLegIndex,
+          openFocusHUD,
+          currentFocusLeg,
+          // 設定
+          loadSampleData,
+          exportData,
+          importData,
+          clearAllData,
+          getLineColor
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

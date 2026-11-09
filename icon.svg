@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#064e3b" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#14b8a6" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+
+  <!-- Outer Ring / Glow -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#10b981" stroke-width="6" opacity="0.25" stroke-dasharray="12 12" />
+
+  <!-- Train Body Container -->
+  <g filter="url(#shadow)">
+    <!-- Main Train Car -->
+    <rect x="126" y="110" width="260" height="290" rx="48" fill="#ffffff" />
+    <!-- Train Window / Cockpit -->
+    <rect x="156" y="145" width="200" height="90" rx="20" fill="#0f172a" />
+    <rect x="168" y="157" width="176" height="66" rx="12" fill="#38bdf8" opacity="0.9" />
+    
+    <!-- Train Line Color Stripe -->
+    <rect x="126" y="255" width="260" height="28" fill="url(#accentGrad)" />
+
+    <!-- Headlights -->
+    <circle cx="176" cy="325" r="18" fill="#facc15" />
+    <circle cx="336" cy="325" r="18" fill="#facc15" />
+
+    <!-- Train Door Indicator -->
+    <rect x="236" y="295" width="40" height="65" rx="8" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3" />
+    <line x1="256" y1="295" x2="256" y2="360" stroke="#64748b" stroke-width="2" />
+
+    <!-- Rails -->
+    <rect x="100" y="420" width="312" height="14" rx="7" fill="#64748b" />
+    <rect x="150" y="434" width="212" height="8" rx="4" fill="#475569" />
+  </g>
+
+  <!-- Floating Badge: Car Number "4" with Door icon -->
+  <g transform="translate(320, 70)" filter="url(#shadow)">
+    <circle cx="50" cy="50" r="48" fill="url(#accentGrad)" stroke="#ffffff" stroke-width="6" />
+    <text x="50" y="62" font-family="'Noto Sans JP', sans-serif" font-weight="900" font-size="44" fill="#ffffff" text-anchor="middle">4</text>
+    <text x="50" y="86" font-family="'Noto Sans JP', sans-serif" font-weight="700" font-size="16" fill="#ecfdf5" text-anchor="middle">号車</text>
+  </g>
+</svg>
